@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>UnruheSMP12</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* Direktes CSS, falls du style.css noch nicht hast */
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #1e1e1e;
+            color: white;
+            text-align: center;
+            margin: 0;
+            padding: 0;
+            position: relative;
+        }
+
+        /* Blasses Hintergrundbild */
+        body::before {
+            content: "";
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: url('images/UnruheSMP.png') center center/cover no-repeat;
+            opacity: 0.18;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        .container {
+            margin-top: 120px;
+            position: relative;
+            z-index: 1;
+        }
+
+        h1 {
+            font-size: 36px;
+            color: #4CAF50;
+        }
+
+        input {
+            padding: 10px;
+            width: 250px;
+            border-radius: 6px;
+            border: none;
+            margin-top: 10px;
+        }
+
+        button {
+            padding: 10px 20px;
+            margin-left: 10px;
+            background-color: #3c8eeb;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            color: white;
+            font-weight: bold;
+            transition: 0.2s;
+        }
+
+        button:hover {
+            background-color: #337cd2;
+            transform: scale(1.03);
+        }
+
+        p {
+            margin-top: 15px;
+            font-size: 16px;
+            
+
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <!-- Hintergrundbild wird per CSS gesetzt -->
+        <h1>Willkommen auf UnruheSMP12!</h1>
+        <p>Bitte gib deinen Minecraft-Namen ein:</p>
+
+        <input type="text" id="playername" placeholder="Minecraft-Name">
+        <button onclick="enter()">Weiter</button>
+    </div>
+
+    <script>
+        function enter() {
+            const name = document.getElementById("playername").value.trim();
+
+            // Liste der erlaubten Minecraft-Namen
+            const whitelist = [
+                "_xzl",
+                "EnderPro",
+                "PixelFreak",
+                "UnruheSMP12"
+            ];
+
+            if (name === "") {
+                alert("Bitte gib deinen Minecraft-Namen ein!");
+                return;
+            }
+
+            if (!whitelist.includes(name)) {
+                alert("Du hast keinen Zugang zum UnruheSMP12!");
+                return;
+            }
+
+            // Spielername speichern
+            localStorage.setItem("playername", name);
+
+            // Weiterleiten
+            window.location.href = "home.html";
+        }
+    </script>
+
+</body>
+</html>

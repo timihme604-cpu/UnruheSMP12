@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>UnruheSMP12</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* Extra Styles für HOME */
+        .menu {
+            margin-top: 50px;
+        }
+
+        .menu button {
+            display: block;
+            margin: 15px auto;
+            padding: 12px 25px;
+            font-size: 18px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            background-color: #3c8eeb;
+            color: white;
+            width: 250px;
+            transition: 0.2s;
+        }
+
+        .menu button:hover {
+            background-color: #337cd2;
+            transform: scale(1.03);
+        }
+
+        h2 span {
+            color: #4CAF50;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>UnruheSMP12</h1>
+        <h2>Willkommen zurück, <span id="playerDisplay"></span>!</h2>
+
+        <div class="menu">
+            <button onclick="location.href='events.html'">🗳️ Event-Abstimmungen</button>
+            <button onclick="location.href='map.html'">🗺️ Weltkarte</button>
+            <button onclick="location.href='news.html'">📰 News & Infos</button>
+        </div>
+    </div>
+
+    <script>
+        // gespeicherten Spielernamen abrufen
+        const name = localStorage.getItem("playername");
+
+        if (!name) {
+            // Falls jemand direkt hierher kommt → zurück zur Startseite
+            window.location.href = "index.html";
+        } else {
+            document.getElementById("playerDisplay").textContent = name;
+        }
+    </script>
+
+</body>
+</html>
