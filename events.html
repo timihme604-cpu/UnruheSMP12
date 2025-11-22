@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Events — UnruheSMP</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* Events page specific styles */
+        :root{--bg:#0f1720;--card:#111827;--accent:#4CAF50;--muted:#9CA3AF}
+        body{background:linear-gradient(180deg,#09121a 0%, #0f1720 100%);color:#e6eef7;font-family:Inter,Segoe UI,Arial, sans-serif;margin:0;padding:24px}
+        .wrap{max-width:980px;margin:0 auto}
+        header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+        header h1{font-size:20px;margin:0;color:var(--accent)}
+        .card{background:rgba(255,255,255,0.03);border-radius:12px;padding:16px;margin-bottom:12px;box-shadow:0 6px 18px rgba(2,6,23,0.6)}
+        .creator{display:flex;gap:12px;align-items:flex-start}
+        .creator input,.creator textarea{background:transparent;border:1px solid rgba(255,255,255,0.06);padding:10px;border-radius:8px;color:inherit;resize:none}
+        .creator .btn{background:var(--accent);border:none;color:#071217;padding:10px 14px;border-radius:8px;cursor:pointer;font-weight:600}
+        .events-list{margin-top:12px;display:grid;grid-template-columns:1fr;gap:12px}
+        .event{display:flex;gap:12px;align-items:flex-start}
+        .event-main{flex:1}
+        .event h3{margin:0 0 6px 0}
+        .meta{color:var(--muted);font-size:13px;margin-bottom:8px}
+        .vote-row{display:flex;align-items:center;gap:10px}
+        .vote-btn{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;cursor:pointer}
+        .vote-btn.active{background:rgba(76,175,80,0.12);border-color:rgba(76,175,80,0.24)}
+        .vote-count{font-weight:700}
+        .comments{margin-top:10px;border-top:1px dashed rgba(255,255,255,0.03);padding-top:10px}
+        .comment{padding:8px 10px;border-radius:8px;background:rgba(255,255,255,0.02);margin-bottom:8px}
+        .comment small{color:var(--muted)}
+        .comment-form{display:flex;gap:8px;margin-top:8px}
+        .comment-form input{flex:1;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit}
+        .hint{color:var(--muted);font-size:13px;margin-top:6px}
+        .top-actions{display:flex;gap:8px;align-items:center}
+        a.btn-link{background:transparent;border:1px solid rgba(255,255,255,0.06);padding:8px 12px;border-radius:8px;color:inherit;text-decoration:none}
+        @media(min-width:800px){.events-list{grid-template-columns:1fr 1fr}}
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <header>
+            <h1>Events & Abstimmungen</h1>
+            <div class="top-actions">
+                <a class="btn-link" href="index.html">Zurück</a>
+                <div class="hint">Angemeldet als: <strong id="usernameLabel">(nicht gesetzt)</strong></div>
+            </div>
+        </header>
+
+        <section class="card">
+            <h2 style="margin-top:0">Neues Event erstellen</h2>
+            <div class="creator">
+                <div style="flex:1">
+                    <input id="eventTitle" placeholder="Event-Titel (z.B. Buildabend, PvP-Turnier)" />
+                    <div style="height:8px"></div>
+                    <textarea id="eventDesc" rows="3" placeholder="Kurze Beschreibung"></textarea>
+                    <div class="hint">Der Eventeintrag wird allen angezeigt — Nutzer können unten abstimmen und kommentieren.</div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:8px">
+                    <button class="btn" id="createBtn">Erstellen</button>
+                </div>
+            </div>
+        </section>
+
+        <section id="events" class="events-list"></section>
+
+        <div style="height:40px"></div>
+    </div>
+
+    <script>
+        // Hilfsfunktionen und State
+        const apiBase = '';
+        const usernameKey = 'playername';
+
+        function getUser() {
+            return localStorage.getItem(usernameKey) || '';
+        }
+
+        function setUserLabel() {
+            const label = document.getElementById('usernameLabel');
+            const u = getUser();
+            label.textContent = u ? u : '(nicht gesetzt)';
+        }
+
+        async function fetchPolls() {
+            const res = await fetch(apiBase + '/polls');
+            if (!res.ok) throw new Error('Failed to load polls');
+            return res.json();
+        }
+
+        function createEventCard(poll) {
+            const user = getUser();
+
+            const el = document.createElement('div');
+            el.className = 'card event';
+
+            const main = document.createElement('div');
+            main.className = 'event-main';
+            const h = document.createElement('h3');
+            h.textContent = poll.question;
+            const meta = document.createElement('div');
+            meta.className = 'meta';
+            const yesCount = poll.yes || 0;
+            const noCount = poll.no || 0;
+            meta.textContent = `👍 ${yesCount} · 👎 ${noCount}`;
+
+            const desc = document.createElement('div');
+            desc.textContent = poll.description || '';
+            desc.style.marginBottom = '8px';
+
+            // Vote row
+            const voteRow = document.createElement('div');
+            voteRow.className = 'vote-row';
+
+            const upBtn = document.createElement('button');
+            upBtn.className = 'vote-btn';
+            upBtn.innerHTML = '👍 <span class="vote-count">' + yesCount + '</span>';
+
+            const downBtn = document.createElement('button');
+            downBtn.className = 'vote-btn';
+            downBtn.innerHTML = '👎 <span class="vote-count">' + noCount + '</span>';
+
+            const userVote = (poll.voters && user && poll.voters[user]) ? poll.voters[user] : null;
+            if (userVote === 'yes') upBtn.classList.add('active');
+            if (userVote === 'no') downBtn.classList.add('active');
+
+            upBtn.onclick = () => submitVote(poll.id, 'yes');
+            downBtn.onclick = () => submitVote(poll.id, 'no');
+
+            voteRow.appendChild(upBtn);
+            voteRow.appendChild(downBtn);
+
+            // Comments
+            const commentsWrap = document.createElement('div');
+            commentsWrap.className = 'comments';
+            const commentsTitle = document.createElement('div');
+            commentsTitle.style.fontWeight = '600';
+            commentsTitle.style.marginBottom = '8px';
+            commentsTitle.textContent = 'Kommentare';
+            commentsWrap.appendChild(commentsTitle);
+
+            if (poll.comments && poll.comments.length) {
+                poll.comments.forEach(c => {
+                    const cm = document.createElement('div');
+                    cm.className = 'comment';
+                    cm.innerHTML = `<strong>${escapeHtml(c.user)}</strong> <small>·</small> <small>${escapeHtml(c.text)}</small>`;
+                    commentsWrap.appendChild(cm);
+                });
+            } else {
+                const empty = document.createElement('div');
+                empty.className = 'comment';
+                empty.style.opacity = '0.6';
+                empty.textContent = 'Noch keine Kommentare';
+                commentsWrap.appendChild(empty);
+            }
+
+            // Kommentarformular
+            const cForm = document.createElement('div');
+            cForm.className = 'comment-form';
+            const cInput = document.createElement('input');
+            cInput.placeholder = 'Kommentar schreiben...';
+            const cBtn = document.createElement('button');
+            cBtn.className = 'vote-btn';
+            cBtn.textContent = 'Senden';
+            cBtn.onclick = () => submitComment(poll.id, cInput.value, cInput);
+            cForm.appendChild(cInput);
+            cForm.appendChild(cBtn);
+            commentsWrap.appendChild(cForm);
+
+            main.appendChild(h);
+            main.appendChild(meta);
+            if (poll.description) main.appendChild(desc);
+            main.appendChild(voteRow);
+            main.appendChild(commentsWrap);
+
+            el.appendChild(main);
+
+            return el;
+        }
+
+        function escapeHtml(str){
+            if (!str) return '';
+            return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        }
+
+        async function submitVote(id, vote) {
+            const user = getUser();
+            if (!user) return alert('Bitte zuerst deinen Minecraft-Namen auf der Startseite eingeben.');
+
+            try {
+                const res = await fetch(apiBase + '/polls/' + id + '/vote', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({ user, vote })
+                });
+                let data = null;
+                try { data = await res.json(); } catch (e) { /* no JSON body */ }
+                if (!res.ok) throw new Error((data && data.error) || res.statusText || 'Fehler');
+                await refresh();
+            } catch (err) {
+                alert('Abstimmen fehlgeschlagen: ' + (err.message || err));
+            }
+        }
+
+        async function submitComment(id, text, inputEl) {
+            const user = getUser();
+            if (!user) return alert('Bitte zuerst deinen Minecraft-Namen auf der Startseite eingeben.');
+            const t = (text || '').trim();
+            if (!t) return;
+            try {
+                const res = await fetch(apiBase + '/polls/' + id + '/comment', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({ user, text: t })
+                });
+                let data = null;
+                try { data = await res.json(); } catch (e) { /* no JSON body */ }
+                if (!res.ok) throw new Error((data && data.error) || res.statusText || 'Fehler');
+                if (inputEl) inputEl.value = '';
+                await refresh();
+            } catch (err) {
+                alert('Kommentar fehlgeschlagen: ' + (err.message || err));
+            }
+        }
+
+        async function createPoll() {
+            const title = document.getElementById('eventTitle').value.trim();
+            const desc = document.getElementById('eventDesc').value.trim();
+            if (!title) return alert('Bitte Titel eingeben');
+            try {
+                const res = await fetch(apiBase + '/polls', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({ question: title, description: desc })
+                });
+                let data = null;
+                try { data = await res.json(); } catch (e) { /* no JSON body */ }
+                if (!res.ok) throw new Error((data && data.error) || res.statusText || 'Fehler');
+                document.getElementById('eventTitle').value = '';
+                document.getElementById('eventDesc').value = '';
+                await refresh();
+            } catch (err) {
+                alert('Event erstellen fehlgeschlagen: ' + (err.message || err));
+            }
+        }
+
+        async function refresh(){
+            try{
+                const list = document.getElementById('events');
+                list.innerHTML = '';
+                const polls = await fetchPolls();
+                // Most recent first
+                polls.slice().reverse().forEach(p => {
+                    // Ensure description and comments exist for compatibility
+                    if (!p.description) p.description = '';
+                    if (!p.comments) p.comments = [];
+                    const card = createEventCard(p);
+                    list.appendChild(card);
+                });
+            }catch(e){
+                console.error(e);
+                document.getElementById('events').innerHTML = '<div class="card">Fehler beim Laden der Events</div>';
+            }
+        }
+
+        // Init
+        document.getElementById('createBtn').addEventListener('click', createPoll);
+        setUserLabel();
+        refresh();
+    </script>
+</body>
+</html>
