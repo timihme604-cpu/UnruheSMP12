@@ -29,7 +29,14 @@
 
         <div class="card">
             <h2 style="margin:0 0 8px 0">Whitelist</h2>
+            <div style="color:#9CA3AF;font-size:13px;margin-bottom:8px">Liste der aktuell freigeschalteten Benutzernamen</div>
             <div id="wlList" class="list">Lade...</div>
+        </div>
+
+        <div class="card">
+            <h2 style="margin:0 0 8px 0">Events verwalten</h2>
+            <div style="color:#9CA3AF;font-size:13px;margin-bottom:8px">Liste aller Events/Abstimmungen. Als Admin kannst du hier Events löschen.</div>
+            <div id="eventsList" class="list">Lade...</div>
         </div>
 
         <div class="card">
@@ -64,7 +71,7 @@
                 el.innerHTML = '';
                 arr.forEach(u=>{
                     const row = document.createElement('div'); row.className='item';
-                    const name = document.createElement('div'); name.textContent = u;
+                    const name = document.createElement('div'); name.textContent = 'Benutzer: ' + u;
                     const actions = document.createElement('div'); actions.className='actions';
                     const del = document.createElement('button'); del.textContent='Entfernen';
                     del.addEventListener('click', async ()=>{
@@ -94,7 +101,7 @@
                 el.innerHTML = '';
                 arr.forEach(u=>{
                     const row = document.createElement('div'); row.className='item';
-                    const name = document.createElement('div'); name.textContent = u;
+                    const name = document.createElement('div'); name.textContent = 'Anfragender: ' + u;
                     const actions = document.createElement('div'); actions.className='actions';
                     const approve = document.createElement('button'); approve.textContent='Freischalten'; approve.style.background='#4CAF50';
                     const reject = document.createElement('button'); reject.textContent='Ablehnen';
@@ -118,7 +125,37 @@
             }catch(e){ el.innerHTML = 'Fehler beim Laden'; }
         }
 
-        loadWhitelist(); loadRequests();
+        async function loadEvents(){
+            const el = document.getElementById('eventsList');
+            el.innerHTML = 'Lade...';
+            try{
+                const res = await fetch('/polls');
+                let arr = [];
+                try { arr = await res.json(); } catch(e){ arr = [] }
+                if (!res.ok) throw new Error('Fehler');
+                if (!arr.length) { el.innerHTML = '<div>Keine Events</div>'; return; }
+                el.innerHTML = '';
+                arr.slice().reverse().forEach(p=>{
+                    const row = document.createElement('div'); row.className='item';
+                    const left = document.createElement('div');
+                    left.innerHTML = `<strong>${p.question}</strong><div style="color:#9CA3AF;font-size:12px">👍 ${p.yes} · 👎 ${p.no}</div>`;
+                    const actions = document.createElement('div'); actions.className='actions';
+                    const del = document.createElement('button'); del.textContent='Löschen';
+                    del.addEventListener('click', async ()=>{
+                        if(!confirm('Event "'+p.question+'" wirklich löschen?')) return;
+                        try{
+                            const r = await fetch('/admin/polls/'+p.id, { method: 'DELETE', headers: {'Content-Type':'application/json','x-admin-pass': adminPass} });
+                            const j = await r.json(); if(!r.ok) throw new Error(j.error||r.statusText||'Fehler');
+                            loadEvents(); loadRequests(); loadWhitelist();
+                        }catch(e){ alert('Fehler: '+(e.message||e)); }
+                    });
+                    actions.appendChild(del);
+                    row.appendChild(left); row.appendChild(actions); el.appendChild(row);
+                });
+            }catch(e){ el.innerHTML = 'Fehler beim Laden'; }
+        }
+
+        loadWhitelist(); loadRequests(); loadEvents();
     </script>
 </body>
 </html>

@@ -1,6 +1,9 @@
 // server.js
 const express = require("express");
 const bodyParser = require("body-parser");
+const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
 // Load environment variables from .env if present
 require('dotenv').config();
 const app = express();
@@ -15,20 +18,55 @@ app.use((req, res, next) => {
     console.log(new Date().toISOString(), req.method, req.url);
     next();
 });
+// CORS erlauben (erlaubt Aufrufe vom Frontend, z.B. GitHub Pages)
+app.use(cors());
 app.use(express.static(__dirname)); // Macht alle HTML/CSS/JS Dateien verfügbar
 
 // --- Datenstruktur für Abstimmungen ---
+// Persistence: load/save from data.json
+const dataFile = path.join(__dirname, 'data.json');
+
 let polls = [];
 let pollIdCounter = 1;
-// Einfache Whitelist (in-memory)
-let whitelist = [
-    "_xzl",
-    "EnderPro",
-    "PixelFreak",
-    "UnruheSMP12"
-];
+// Einfache Whitelist (in-memory fallback)
+let whitelist = ["_xzl", "EnderPro", "PixelFreak", "UnruheSMP12"];
 // Ausstehende Whitelist-Anfragen (nur sichtbar für Admin über UI)
 let pendingRequests = [];
+
+function loadData() {
+    try {
+        if (fs.existsSync(dataFile)) {
+            const raw = fs.readFileSync(dataFile, 'utf8');
+            if (raw && raw.trim().length) {
+                const obj = JSON.parse(raw);
+                polls = obj.polls || [];
+                whitelist = obj.whitelist || whitelist;
+                pendingRequests = obj.pendingRequests || [];
+                pollIdCounter = obj.pollIdCounter || (polls.reduce((max, p) => Math.max(max, p.id), 0) + 1) || 1;
+                console.log('Loaded data from', dataFile);
+                return;
+            }
+        }
+        // If we get here, create default file
+        saveData();
+    } catch (err) {
+        console.error('Fehler beim Laden der Daten:', err);
+    }
+}
+
+function saveData() {
+    try {
+        const tmpFile = dataFile + '.tmp';
+        const toWrite = JSON.stringify({ polls, whitelist, pendingRequests, pollIdCounter }, null, 2);
+        fs.writeFileSync(tmpFile, toWrite, 'utf8');
+        fs.renameSync(tmpFile, dataFile);
+    } catch (err) {
+        console.error('Fehler beim Speichern der Daten:', err);
+    }
+}
+
+// Load data at startup
+loadData();
 
 // --- Routen ---
 // Alle Abstimmungen abrufen
@@ -56,6 +94,7 @@ app.post('/whitelist', checkAdmin, (req, res) => {
     if (!user) return res.status(400).json({ error: 'Benutzername fehlt' });
     if (whitelist.includes(user)) return res.status(400).json({ error: 'Benutzer bereits auf der Whitelist' });
     whitelist.push(user);
+    saveData();
     res.json({ success: true, whitelist });
 });
 
@@ -66,6 +105,7 @@ app.post('/whitelist/request', (req, res) => {
     if (whitelist.includes(user)) return res.status(400).json({ error: 'Benutzer bereits whitelisted' });
     if (pendingRequests.includes(user)) return res.status(400).json({ error: 'Anfrage bereits vorhanden' });
     pendingRequests.push(user);
+    saveData();
     res.json({ success: true });
 });
 
@@ -83,6 +123,7 @@ app.post('/whitelist/approve', checkAdmin, (req, res) => {
     if (!whitelist.includes(user)) whitelist.push(user);
     // aus pending entfernen
     pendingRequests.splice(idx, 1);
+    saveData();
     res.json({ success: true, whitelist });
 });
 
@@ -93,6 +134,7 @@ app.post('/whitelist/reject', checkAdmin, (req, res) => {
     const idx = pendingRequests.indexOf(user);
     if (idx === -1) return res.status(404).json({ error: 'Anfrage nicht gefunden' });
     pendingRequests.splice(idx, 1);
+    saveData();
     res.json({ success: true });
 });
 
@@ -108,7 +150,19 @@ app.delete('/admin/whitelist', checkAdmin, (req, res) => {
     const idx = whitelist.indexOf(user);
     if (idx === -1) return res.status(404).json({ error: 'Benutzer nicht gefunden' });
     whitelist.splice(idx, 1);
+    saveData();
     res.json({ success: true, whitelist });
+});
+
+// Admin: Poll / Event löschen
+app.delete('/admin/polls/:id', checkAdmin, (req, res) => {
+    const pollId = parseInt(req.params.id);
+    if (isNaN(pollId)) return res.status(400).json({ error: 'Ungültige ID' });
+    const idx = polls.findIndex(p => p.id === pollId);
+    if (idx === -1) return res.status(404).json({ error: 'Event nicht gefunden' });
+    polls.splice(idx, 1);
+    saveData();
+    res.json({ success: true, polls });
 });
 
 // Neue Abstimmung erstellen
@@ -125,6 +179,7 @@ app.post("/polls", (req, res) => {
         voters: {} // speichert user -> "yes" | "no"
     };
     polls.push(newPoll);
+    saveData();
     res.json(newPoll);
 });
 
@@ -163,6 +218,8 @@ app.post("/polls/:id/vote", (req, res) => {
     // Speichere/aktualisiere die Stimme des Benutzers
     poll.voters[user] = vote;
 
+    saveData();
+
     res.json(poll);
 });
 
@@ -175,6 +232,7 @@ app.post("/polls/:id/comment", (req, res) => {
     if (!user || !text) return res.status(400).json({ error: "Fehlender Benutzername oder Kommentar" });
 
     poll.comments.push({ user, text });
+    saveData();
     res.json(poll);
 });
 
