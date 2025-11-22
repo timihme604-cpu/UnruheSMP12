@@ -42,6 +42,7 @@
 
         <div class="menu">
             <button onclick="location.href='events.html'">🗳️ Event-Abstimmungen</button>
+            <button id="whitelistBtn" style="display:none">🔒 Whitelist verwalten</button>
             <button onclick="location.href='map.html'">🗺️ Weltkarte</button>
             <button onclick="location.href='news.html'">📰 News & Infos</button>
         </div>
@@ -56,6 +57,141 @@
             window.location.href = "index.html";
         } else {
             document.getElementById("playerDisplay").textContent = name;
+        }
+        // Admin-only: Anfragen verwalten (nur ein Button)
+        const adminName = 'UnruheSMP12';
+        // Admin password stored for this page session
+        let adminPass = null;
+        if (name === adminName) {
+            // Zusätzlicher Button: Anfragen verwalten
+            const reqBtn = document.createElement('button');
+            reqBtn.textContent = '📨 Anfragen verwalten';
+            reqBtn.style.display = 'inline-block';
+            reqBtn.style.marginLeft = '8px';
+            const menu = document.querySelector('.menu');
+            if (menu) menu.appendChild(reqBtn);
+            reqBtn.addEventListener('click', async () => {
+                // Prompt for admin password once, save to sessionStorage and navigate to admin page
+                let pass = sessionStorage.getItem('adminPass');
+                if (!pass) {
+                    pass = prompt('Admin-Passwort eingeben:');
+                    if (!pass) return;
+                    sessionStorage.setItem('adminPass', pass);
+                }
+                window.location.href = 'admin.html';
+            });
+        }
+
+        // whitelist modal removed to keep single admin UI (requests management)
+
+        async function showRequestsModal(adminPass) {
+            // Modal wie oben
+            const overlay = document.createElement('div');
+            overlay.style.position = 'fixed';
+            overlay.style.inset = '0';
+            overlay.style.background = 'rgba(0,0,0,0.6)';
+            overlay.style.display = 'flex';
+            overlay.style.alignItems = 'center';
+            overlay.style.justifyContent = 'center';
+            overlay.style.zIndex = '9999';
+
+            const box = document.createElement('div');
+            box.style.background = '#0f1720';
+            box.style.padding = '18px';
+            box.style.borderRadius = '10px';
+            box.style.width = '420px';
+            box.style.color = 'white';
+            box.innerHTML = '<h3 style="margin:0 0 8px 0">Ausstehende Whitelist-Anfragen</h3>';
+
+            const list = document.createElement('div');
+            list.style.maxHeight = '300px';
+            list.style.overflow = 'auto';
+            list.style.marginTop = '8px';
+
+            box.appendChild(list);
+
+            const cancel = document.createElement('button');
+            cancel.textContent = 'Schließen';
+            cancel.style.marginTop = '12px';
+            cancel.style.padding = '8px 10px';
+            cancel.style.borderRadius = '6px';
+            cancel.style.cursor = 'pointer';
+            cancel.addEventListener('click', () => overlay.remove());
+            box.appendChild(cancel);
+
+            overlay.appendChild(box);
+            document.body.appendChild(overlay);
+
+            // Lade Anfragen
+            try {
+                const res = await fetch('/whitelist/requests', { headers: { 'x-admin-pass': adminPass } });
+                let arr = [];
+                try { arr = await res.json(); } catch(e) { arr = [] }
+                if (!res.ok) throw new Error('Fehler beim Laden');
+
+                if (!arr.length) {
+                    list.textContent = 'Keine offenen Anfragen.';
+                    return;
+                }
+
+                arr.forEach(u => {
+                    const row = document.createElement('div');
+                    row.style.display = 'flex';
+                    row.style.justifyContent = 'space-between';
+                    row.style.alignItems = 'center';
+                    row.style.padding = '8px';
+                    row.style.borderBottom = '1px solid rgba(255,255,255,0.04)';
+
+                    const name = document.createElement('div');
+                    name.textContent = u;
+
+                    const actions = document.createElement('div');
+                    actions.style.display = 'flex';
+                    actions.style.gap = '8px';
+
+                    const approve = document.createElement('button');
+                    approve.textContent = '✅ Freischalten';
+                    approve.style.background = '#4CAF50';
+                    approve.style.border = 'none';
+                    approve.style.padding = '6px 8px';
+                    approve.style.borderRadius = '6px';
+                    approve.style.cursor = 'pointer';
+                    approve.addEventListener('click', async () => {
+                        try {
+                            const r = await fetch('/whitelist/approve', { method: 'POST', headers: {'Content-Type':'application/json','x-admin-pass': adminPass}, body: JSON.stringify({ user: u }) });
+                            const j = await r.json();
+                            if (!r.ok) throw new Error(j.error || r.statusText || 'Fehler');
+                            row.remove();
+                            alert(u + ' wurde zur Whitelist hinzugefügt');
+                        } catch (err) { alert('Fehler: ' + (err.message || err)); }
+                    });
+
+                    const reject = document.createElement('button');
+                    reject.textContent = '❌ Ablehnen';
+                    reject.style.background = 'transparent';
+                    reject.style.border = '1px solid rgba(255,255,255,0.06)';
+                    reject.style.padding = '6px 8px';
+                    reject.style.borderRadius = '6px';
+                    reject.style.cursor = 'pointer';
+                    reject.addEventListener('click', async () => {
+                        try {
+                            const r = await fetch('/whitelist/reject', { method: 'POST', headers: {'Content-Type':'application/json','x-admin-pass': adminPass}, body: JSON.stringify({ user: u }) });
+                            const j = await r.json();
+                            if (!r.ok) throw new Error(j.error || r.statusText || 'Fehler');
+                            row.remove();
+                        } catch (err) { alert('Fehler: ' + (err.message || err)); }
+                    });
+
+                    actions.appendChild(approve);
+                    actions.appendChild(reject);
+                    row.appendChild(name);
+                    row.appendChild(actions);
+                    list.appendChild(row);
+                });
+
+            } catch (err) {
+                list.textContent = 'Fehler beim Laden der Anfragen.';
+            }
         }
     </script>
 

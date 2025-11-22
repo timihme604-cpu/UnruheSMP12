@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Admin — Whitelist & Anfragen</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body{background:#07121a;color:#e6eef7;font-family:Arial,Helvetica,sans-serif;padding:18px}
+        .wrap{max-width:980px;margin:0 auto}
+        h1{color:#4CAF50}
+        .card{background:rgba(255,255,255,0.03);padding:14px;border-radius:10px;margin-bottom:12px}
+        .list{display:flex;flex-direction:column;gap:8px}
+        .item{display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:8px;background:rgba(255,255,255,0.02)}
+        .actions button{margin-left:8px}
+        .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+        .link{background:transparent;border:1px solid rgba(255,255,255,0.06);padding:8px;border-radius:8px;color:inherit;text-decoration:none}
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <div class="top">
+            <h1>Admin — Whitelist & Anfragen</h1>
+            <div>
+                <button id="logoutBtn" class="link">Abmelden</button>
+                <a class="link" href="home.html">Zurück</a>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2 style="margin:0 0 8px 0">Whitelist</h2>
+            <div id="wlList" class="list">Lade...</div>
+        </div>
+
+        <div class="card">
+            <h2 style="margin:0 0 8px 0">Ausstehende Anfragen</h2>
+            <div id="reqList" class="list">Lade...</div>
+        </div>
+    </div>
+
+    <script>
+        // Read admin pass from sessionStorage, else prompt
+        let adminPass = sessionStorage.getItem('adminPass');
+        if (!adminPass) {
+            adminPass = prompt('Admin-Passwort eingeben:');
+            if (!adminPass) { alert('Admin-Passwort benötigt'); window.location.href='home.html'; }
+            sessionStorage.setItem('adminPass', adminPass);
+        }
+
+        document.getElementById('logoutBtn').addEventListener('click', ()=>{
+            sessionStorage.removeItem('adminPass');
+            window.location.href='home.html';
+        });
+
+        async function loadWhitelist(){
+            const el = document.getElementById('wlList');
+            el.innerHTML = 'Lade...';
+            try{
+                const res = await fetch('/admin/whitelist', { headers: { 'x-admin-pass': adminPass } });
+                let arr = [];
+                try { arr = await res.json(); } catch(e){ arr=[] }
+                if (!res.ok) throw new Error('Fehler');
+                if (!arr.length) { el.innerHTML = '<div>Keine Einträge</div>'; return; }
+                el.innerHTML = '';
+                arr.forEach(u=>{
+                    const row = document.createElement('div'); row.className='item';
+                    const name = document.createElement('div'); name.textContent = u;
+                    const actions = document.createElement('div'); actions.className='actions';
+                    const del = document.createElement('button'); del.textContent='Entfernen';
+                    del.addEventListener('click', async ()=>{
+                        if(!confirm('Benutzer '+u+' wirklich entfernen?')) return;
+                        try{
+                            const r = await fetch('/admin/whitelist', { method: 'DELETE', headers: {'Content-Type':'application/json','x-admin-pass': adminPass}, body: JSON.stringify({ user: u }) });
+                            const j = await r.json();
+                            if(!r.ok) throw new Error(j.error||r.statusText||'Fehler');
+                            loadWhitelist();
+                        }catch(e){ alert('Fehler: '+(e.message||e)); }
+                    });
+                    actions.appendChild(del);
+                    row.appendChild(name); row.appendChild(actions); el.appendChild(row);
+                });
+            }catch(e){ el.innerHTML = 'Fehler beim Laden'; }
+        }
+
+        async function loadRequests(){
+            const el = document.getElementById('reqList');
+            el.innerHTML = 'Lade...';
+            try{
+                const res = await fetch('/whitelist/requests', { headers: { 'x-admin-pass': adminPass } });
+                let arr = [];
+                try{ arr = await res.json(); }catch(e){ arr=[] }
+                if(!res.ok) throw new Error('Fehler');
+                if(!arr.length){ el.innerHTML = '<div>Keine Anfragen</div>'; return; }
+                el.innerHTML = '';
+                arr.forEach(u=>{
+                    const row = document.createElement('div'); row.className='item';
+                    const name = document.createElement('div'); name.textContent = u;
+                    const actions = document.createElement('div'); actions.className='actions';
+                    const approve = document.createElement('button'); approve.textContent='Freischalten'; approve.style.background='#4CAF50';
+                    const reject = document.createElement('button'); reject.textContent='Ablehnen';
+                    approve.addEventListener('click', async ()=>{
+                        try{
+                            const r = await fetch('/whitelist/approve', { method:'POST', headers:{'Content-Type':'application/json','x-admin-pass': adminPass}, body: JSON.stringify({ user: u }) });
+                            const j = await r.json(); if(!r.ok) throw new Error(j.error||r.statusText||'Fehler');
+                            loadRequests(); loadWhitelist();
+                        }catch(e){ alert('Fehler: '+(e.message||e)); }
+                    });
+                    reject.addEventListener('click', async ()=>{
+                        try{
+                            const r = await fetch('/whitelist/reject', { method:'POST', headers:{'Content-Type':'application/json','x-admin-pass': adminPass}, body: JSON.stringify({ user: u }) });
+                            const j = await r.json(); if(!r.ok) throw new Error(j.error||r.statusText||'Fehler');
+                            loadRequests();
+                        }catch(e){ alert('Fehler: '+(e.message||e)); }
+                    });
+                    actions.appendChild(approve); actions.appendChild(reject);
+                    row.appendChild(name); row.appendChild(actions); el.appendChild(row);
+                });
+            }catch(e){ el.innerHTML = 'Fehler beim Laden'; }
+        }
+
+        loadWhitelist(); loadRequests();
+    </script>
+</body>
+</html>

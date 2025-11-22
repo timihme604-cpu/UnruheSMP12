@@ -86,32 +86,51 @@
     </div>
 
     <script>
-        function enter() {
+        async function enter() {
             const name = document.getElementById("playername").value.trim();
-
-            // Liste der erlaubten Minecraft-Namen
-            const whitelist = [
-                "_xzl",
-                "Janerle",
-                "PixelFreak",
-                "UnruheSMP12"
-            ];
 
             if (name === "") {
                 alert("Bitte gib deinen Minecraft-Namen ein!");
                 return;
             }
 
-            if (!whitelist.includes(name)) {
-                alert("Du hast keinen Zugang zum UnruheSMP12!");
+            // Admin-Bypass: UnruheSMP12 immer erlauben
+            if (name === 'UnruheSMP12') {
+                localStorage.setItem("playername", name);
+                window.location.href = "home.html";
                 return;
             }
 
-            // Spielername speichern
-            localStorage.setItem("playername", name);
+            // Whitelist vom Server abrufen
+            try {
+                const res = await fetch('/whitelist');
+                let wl = [];
+                try { wl = await res.json(); } catch(e) { wl = [] }
+                if (!res.ok) throw new Error('Fehler beim Abruf der Whitelist');
 
-            // Weiterleiten
-            window.location.href = "home.html";
+                if (wl.includes(name)) {
+                    localStorage.setItem("playername", name);
+                    window.location.href = "home.html";
+                    return;
+                }
+
+                // Nicht whitelisted — Anfrage anbieten
+                const ask = confirm('Dein Name ist nicht auf der Whitelist. Möchtest du eine Whitelist-Anfrage an den Server senden?');
+                if (!ask) return;
+                try {
+                    const r = await fetch('/whitelist/request', {
+                        method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ user: name })
+                    });
+                    let j = null; try { j = await r.json(); } catch(e) {}
+                    if (!r.ok) throw new Error((j && j.error) || r.statusText || 'Fehler');
+                    alert('Anfrage gesendet. Der Server-Admin kann deinen Namen überprüfen und freischalten.');
+                } catch (err) {
+                    alert('Fehler beim Senden der Anfrage: ' + (err.message || err));
+                }
+                return;
+            } catch (err) {
+                alert('Fehler beim Überprüfen der Whitelist: ' + (err.message || err));
+            }
         }
     </script>
 
