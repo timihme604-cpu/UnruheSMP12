@@ -4,6 +4,8 @@ const bodyParser = require("body-parser");
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const sqlite3 = require('sqlite3').verbose();
+const { Pool } = require('pg');
 // Load environment variables from .env if present
 require('dotenv').config();
 const app = express();
@@ -54,7 +56,7 @@ function loadData() {
     }
 }
 
-function saveData() {
+function saveToFile() {
     try {
         const tmpFile = dataFile + '.tmp';
         const toWrite = JSON.stringify({ polls, whitelist, pendingRequests, pollIdCounter }, null, 2);
@@ -67,6 +69,176 @@ function saveData() {
 
 // Load data at startup
 loadData();
+
+// --- SQLite DB (for durable local persistence)
+const dbFile = path.join(__dirname, 'database.sqlite');
+const db = new sqlite3.Database(dbFile);
+
+function initDbAndMigrate() {
+    db.serialize(() => {
+        db.run("CREATE TABLE IF NOT EXISTS whitelist (user TEXT PRIMARY KEY)");
+        db.run("CREATE TABLE IF NOT EXISTS pendingRequests (user TEXT PRIMARY KEY)");
+        db.run("CREATE TABLE IF NOT EXISTS polls (id INTEGER PRIMARY KEY, question TEXT, yes INTEGER, no INTEGER, comments TEXT, voters TEXT)");
+
+        db.get("SELECT COUNT(*) as c FROM whitelist", (err, row) => {
+            if (err) return console.error('DB count error', err);
+            if (row && row.c > 0) {
+                loadFromDb();
+            } else {
+                try {
+                    if (fs.existsSync(dataFile)) {
+                        const raw = fs.readFileSync(dataFile, 'utf8');
+                        if (raw && raw.trim().length) {
+                            const obj = JSON.parse(raw);
+                            const wl = obj.whitelist || [];
+                            const stmtWl = db.prepare('INSERT OR IGNORE INTO whitelist(user) VALUES (?)');
+                            wl.forEach(u => stmtWl.run(u));
+                            stmtWl.finalize();
+                            const pr = obj.pendingRequests || [];
+                            const stmtPr = db.prepare('INSERT OR IGNORE INTO pendingRequests(user) VALUES (?)');
+                            pr.forEach(u => stmtPr.run(u));
+                            stmtPr.finalize();
+                            const pollsToInsert = obj.polls || [];
+                            const stmtPoll = db.prepare('INSERT OR REPLACE INTO polls(id,question,yes,no,comments,voters) VALUES (?,?,?,?,?,?)');
+                            pollsToInsert.forEach(p => {
+                                stmtPoll.run(p.id, p.question, p.yes || 0, p.no || 0, JSON.stringify(p.comments || []), JSON.stringify(p.voters || {}));
+                            });
+                            stmtPoll.finalize();
+                        }
+                    }
+                } catch (e) { console.error('Migration error', e); }
+                loadFromDb();
+                saveData();
+            }
+        });
+    });
+}
+
+function loadFromDb() {
+    db.all('SELECT user FROM whitelist', (err, rows) => { if (!err) whitelist = rows.map(r => r.user); });
+    db.all('SELECT user FROM pendingRequests', (err, rows) => { if (!err) pendingRequests = rows.map(r => r.user); });
+    db.all('SELECT * FROM polls', (err, rows) => {
+        if (!err) {
+            polls = rows.map(r => ({ id: r.id, question: r.question, yes: r.yes, no: r.no, comments: (() => { try { return JSON.parse(r.comments || '[]'); } catch(e){ return []; } })(), voters: (() => { try { return JSON.parse(r.voters || '{}'); } catch(e){ return {}; } })() }));
+            pollIdCounter = polls.reduce((max, p) => Math.max(max, p.id), 0) + 1;
+        }
+    });
+}
+
+function persistAllToDb() {
+    db.serialize(() => {
+        db.run('BEGIN TRANSACTION');
+        db.run('DELETE FROM whitelist');
+        const stmtW = db.prepare('INSERT INTO whitelist(user) VALUES (?)');
+        whitelist.forEach(u => stmtW.run(u));
+        stmtW.finalize();
+
+        db.run('DELETE FROM pendingRequests');
+        const stmtP = db.prepare('INSERT INTO pendingRequests(user) VALUES (?)');
+        pendingRequests.forEach(u => stmtP.run(u));
+        stmtP.finalize();
+
+        db.run('DELETE FROM polls');
+        const stmtPoll = db.prepare('INSERT INTO polls(id,question,yes,no,comments,voters) VALUES (?,?,?,?,?,?)');
+        polls.forEach(p => stmtPoll.run(p.id, p.question, p.yes || 0, p.no || 0, JSON.stringify(p.comments || []), JSON.stringify(p.voters || {})));
+        stmtPoll.finalize();
+
+        db.run('COMMIT');
+    });
+}
+// If DATABASE_URL is provided, use Postgres; otherwise use SQLite
+const usePg = !!process.env.DATABASE_URL;
+let pgPool = null;
+if (usePg) {
+    pgPool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false });
+    // Postgres init and migration
+    function initPgAndMigrate() {
+        pgPool.connect((err, client, release) => {
+            if (err) return console.error('Postgres connect error', err);
+            client.query(`
+                CREATE TABLE IF NOT EXISTS whitelist ("user" TEXT PRIMARY KEY);
+                CREATE TABLE IF NOT EXISTS pendingRequests ("user" TEXT PRIMARY KEY);
+                CREATE TABLE IF NOT EXISTS polls (id INTEGER PRIMARY KEY, question TEXT, yes INTEGER, no INTEGER, comments TEXT, voters TEXT);
+            `, (err) => {
+                if (err) { console.error('Postgres init error', err); release(); return; }
+                // Check if whitelist has rows
+                client.query('SELECT COUNT(*) as c FROM whitelist', (err, res) => {
+                    if (err) { console.error('Postgres count error', err); release(); return; }
+                    const c = parseInt(res.rows[0].c, 10);
+                    if (c > 0) {
+                        // load
+                        loadFromPg();
+                        release();
+                    } else {
+                        // migrate from data.json
+                        try {
+                            if (fs.existsSync(dataFile)) {
+                                const raw = fs.readFileSync(dataFile, 'utf8');
+                                if (raw && raw.trim().length) {
+                                    const obj = JSON.parse(raw);
+                                    const wl = obj.whitelist || [];
+                                    const pr = obj.pendingRequests || [];
+                                    const pollsToInsert = obj.polls || [];
+                                    // insert whitelist
+                                    const wlPromises = wl.map(u => client.query('INSERT INTO whitelist("user") VALUES($1) ON CONFLICT DO NOTHING', [u]));
+                                    // insert pending
+                                    const prPromises = pr.map(u => client.query('INSERT INTO pendingRequests("user") VALUES($1) ON CONFLICT DO NOTHING', [u]));
+                                    // insert polls
+                                    const pollPromises = pollsToInsert.map(p => client.query('INSERT INTO polls(id,question,yes,no,comments,voters) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT (id) DO UPDATE SET question=EXCLUDED.question', [p.id, p.question, p.yes||0, p.no||0, JSON.stringify(p.comments||[]), JSON.stringify(p.voters||{})]));
+                                    Promise.all([...wlPromises, ...prPromises, ...pollPromises]).then(()=>{
+                                        loadFromPg();
+                                        saveData();
+                                        release();
+                                    }).catch(e=>{ console.error('Postgres migration error', e); release(); });
+                                } else { loadFromPg(); release(); }
+                            } else { loadFromPg(); release(); }
+                        } catch(e){ console.error('Postgres migration error', e); release(); }
+                    }
+                });
+            });
+        });
+    }
+
+    function loadFromPg() {
+        // whitelist
+        pgPool.query('SELECT "user" FROM whitelist').then(r => { whitelist = r.rows.map(x => x.user); }).catch(e=>console.error(e));
+        pgPool.query('SELECT "user" FROM pendingRequests').then(r => { pendingRequests = r.rows.map(x => x.user); }).catch(e=>console.error(e));
+        pgPool.query('SELECT * FROM polls').then(r => {
+            polls = r.rows.map(row => {
+                let comments = [];
+                let voters = {};
+                try { comments = JSON.parse(row.comments || '[]'); } catch(e) { comments = []; }
+                try { voters = JSON.parse(row.voters || '{}'); } catch(e) { voters = {}; }
+                return { id: row.id, question: row.question, yes: row.yes, no: row.no, comments, voters };
+            });
+            pollIdCounter = polls.reduce((max, p) => Math.max(max, p.id), 0) + 1;
+        }).catch(e => console.error(e));
+    }
+
+    function persistAllToPg() {
+        pgPool.connect((err, client, release)=>{
+            if (err) { console.error('PG connect error', err); return; }
+            client.query('BEGIN').then(()=>{
+                return client.query('DELETE FROM whitelist');
+            }).then(()=>{
+                const promises = whitelist.map(u => client.query('INSERT INTO whitelist("user") VALUES($1)', [u]));
+                return Promise.all(promises);
+            }).then(()=> client.query('DELETE FROM pendingRequests')).then(()=>{
+                const promises = pendingRequests.map(u => client.query('INSERT INTO pendingRequests("user") VALUES($1)', [u]));
+                return Promise.all(promises);
+            }).then(()=> client.query('DELETE FROM polls')).then(()=>{
+                const promises = polls.map(p => client.query('INSERT INTO polls(id,question,yes,no,comments,voters) VALUES($1,$2,$3,$4,$5,$6)', [p.id,p.question,p.yes||0,p.no||0,JSON.stringify(p.comments||[]),JSON.stringify(p.voters||{})]));
+                return Promise.all(promises);
+            }).then(()=> client.query('COMMIT')).then(()=>{ release(); }).catch(e=>{ console.error('PG persist error', e); client.query('ROLLBACK').finally(()=>release()); });
+        });
+    }
+
+    initPgAndMigrate();
+
+} else {
+    // Initialize SQLite DB and migrate if needed
+    initDbAndMigrate();
+}
 
 // --- Routen ---
 // Alle Abstimmungen abrufen

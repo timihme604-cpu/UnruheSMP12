@@ -3,19 +3,17 @@
     {
       "id": 1,
       "question": "Plugin?!",
-      "yes": 0,
-      "no": 1,
+      "yes": 1,
+      "no": 0,
       "comments": [],
       "voters": {
-        "UnruheSMP12": "no"
+        "UnruheSMP12": "yes"
       }
     }
   ],
   "whitelist": [
-    "_xzl",
-    "EnderPro",
-    "PixelFreak",
-    "UnruheSMP12"
+    "UnruheSMP12",
+    "_xzl"
   ],
   "pendingRequests": [],
   "pollIdCounter": 2

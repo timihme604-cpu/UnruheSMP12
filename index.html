@@ -16,6 +16,18 @@
             position: relative;
         }
 
+        function showInlineNotice(container, message, type){
+            container.innerHTML = '';
+            const box = document.createElement('div');
+            box.textContent = message;
+            box.style.padding = '10px 12px'; box.style.borderRadius = '8px'; box.style.display = 'inline-block';
+            box.style.marginTop = '6px';
+            if(type === 'success'){ box.style.background = '#1f3e2e'; box.style.color = '#b7f0c7'; }
+            else if(type === 'error'){ box.style.background = '#3a1f1f'; box.style.color = '#ffd6d6'; }
+            else { box.style.background = '#2b2830'; box.style.color = '#f0e6d8'; }
+            container.appendChild(box);
+        }
+
         /* Blasses Hintergrundbild */
         body::before {
             content: "";
@@ -114,19 +126,65 @@
                     return;
                 }
 
-                // Nicht whitelisted — Anfrage anbieten
-                const ask = confirm('Dein Name ist nicht auf der Whitelist. Möchtest du eine Whitelist-Anfrage an den Server senden?');
-                if (!ask) return;
-                try {
-                    const r = await fetch('/whitelist/request', {
-                        method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ user: name })
-                    });
-                    let j = null; try { j = await r.json(); } catch(e) {}
-                    if (!r.ok) throw new Error((j && j.error) || r.statusText || 'Fehler');
-                    alert('Anfrage gesendet. Der Server-Admin kann deinen Namen überprüfen und freischalten.');
-                } catch (err) {
-                    alert('Fehler beim Senden der Anfrage: ' + (err.message || err));
+                // Nicht whitelisted — Inline-Hinweis anzeigen mit Aktionen
+                const noticeContainerId = 'wl-notice-container';
+                let noticeEl = document.getElementById(noticeContainerId);
+                if (!noticeEl) {
+                    noticeEl = document.createElement('div');
+                    noticeEl.id = noticeContainerId;
+                    noticeEl.style.marginTop = '12px';
+                    document.querySelector('.container').appendChild(noticeEl);
                 }
+                noticeEl.innerHTML = '';
+
+                const info = document.createElement('div');
+                info.textContent = 'Dein Name ist nicht auf der Whitelist.';
+                info.style.marginBottom = '8px';
+
+                const actions = document.createElement('div');
+                const sendBtn = document.createElement('button'); sendBtn.textContent = 'Anfrage senden';
+                sendBtn.style.background = '#4CAF50'; sendBtn.style.border = 'none'; sendBtn.style.color = '#fff';
+                const retryBtn = document.createElement('button'); retryBtn.textContent = 'Erneut prüfen'; retryBtn.style.marginLeft = '8px';
+                const cancelBtn = document.createElement('button'); cancelBtn.textContent = 'Abbrechen'; cancelBtn.style.marginLeft = '8px';
+
+                sendBtn.addEventListener('click', async () => {
+                    sendBtn.disabled = true; sendBtn.textContent = 'Sende...';
+                    try {
+                        const r = await fetch('/whitelist/request', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ user: name }) });
+                        let j = null; try { j = await r.json(); } catch(e) {}
+                        if (!r.ok) throw new Error((j && j.error) || r.statusText || 'Fehler');
+                        showInlineNotice(noticeEl, 'Anfrage gesendet. Bitte warte, bis der Admin deinen Namen freischaltet.', 'success');
+                    } catch (err) {
+                        showInlineNotice(noticeEl, 'Fehler beim Senden der Anfrage: ' + (err.message || err), 'error');
+                    } finally {
+                        sendBtn.disabled = false; sendBtn.textContent = 'Anfrage senden';
+                    }
+                });
+
+                retryBtn.addEventListener('click', async () => {
+                    retryBtn.disabled = true; retryBtn.textContent = 'Prüfe...';
+                    try {
+                        const r2 = await fetch('/whitelist');
+                        let wl2 = [];
+                        try { wl2 = await r2.json(); } catch(e) { wl2 = []; }
+                        if (wl2.includes(name)) {
+                            localStorage.setItem('playername', name);
+                            window.location.href = 'home.html';
+                            return;
+                        } else {
+                            showInlineNotice(noticeEl, 'Noch nicht freigeschaltet. Der Admin muss deine Anfrage genehmigen.', 'warning');
+                        }
+                    } catch (err) {
+                        showInlineNotice(noticeEl, 'Fehler beim Prüfen: ' + (err.message || err), 'error');
+                    } finally {
+                        retryBtn.disabled = false; retryBtn.textContent = 'Erneut prüfen';
+                    }
+                });
+
+                cancelBtn.addEventListener('click', () => { noticeEl.innerHTML = ''; });
+
+                actions.appendChild(sendBtn); actions.appendChild(retryBtn); actions.appendChild(cancelBtn);
+                noticeEl.appendChild(info); noticeEl.appendChild(actions);
                 return;
             } catch (err) {
                 alert('Fehler beim Überprüfen der Whitelist: ' + (err.message || err));
