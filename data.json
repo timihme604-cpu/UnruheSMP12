@@ -1,20 +1,11 @@
 {
-  "polls": [
-    {
-      "id": 1,
-      "question": "Plugin?!",
-      "yes": 1,
-      "no": 0,
-      "comments": [],
-      "voters": {
-        "UnruheSMP12": "yes"
-      }
-    }
-  ],
+  "polls": [],
+  "pollIdCounter": 3,
   "whitelist": [
-    "UnruheSMP12",
-    "_xzl"
+    "_xzl",
+    "EnderPro",
+    "PixelFreak",
+    "UnruheSMP12"
   ],
-  "pendingRequests": [],
-  "pollIdCounter": 2
+  "pendingRequests": []
 }

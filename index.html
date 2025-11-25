@@ -16,17 +16,6 @@
             position: relative;
         }
 
-        function showInlineNotice(container, message, type){
-            container.innerHTML = '';
-            const box = document.createElement('div');
-            box.textContent = message;
-            box.style.padding = '10px 12px'; box.style.borderRadius = '8px'; box.style.display = 'inline-block';
-            box.style.marginTop = '6px';
-            if(type === 'success'){ box.style.background = '#1f3e2e'; box.style.color = '#b7f0c7'; }
-            else if(type === 'error'){ box.style.background = '#3a1f1f'; box.style.color = '#ffd6d6'; }
-            else { box.style.background = '#2b2830'; box.style.color = '#f0e6d8'; }
-            container.appendChild(box);
-        }
 
         /* Blasses Hintergrundbild */
         body::before {
